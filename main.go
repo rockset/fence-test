@@ -62,6 +62,7 @@ func main() {
 	var offset string
 	for idx := 0; idx < count; idx++ {
 		t0 := time.Now()
+		slog.Info("loop", "idx", idx)
 
 		// query and see how many documents there are (should be 0)
 		res, err := rc.Query(ctx, fmt.Sprintf("SELECT _id FROM %s.%s", ws, collection))
@@ -69,7 +70,7 @@ func main() {
 			panic(err)
 		}
 		if len(res.Results) != 0 {
-			panic(fmt.Sprintf("expected 0 results, got %d", len(res.Results)))
+			panic(fmt.Sprintf("expected 0 docs, got %d", len(res.Results)))
 		}
 
 		// write docs, get offset
@@ -82,6 +83,19 @@ func main() {
 		if err = waitForOffset(ctx, rc, ws, collection, offset); err != nil {
 			panic(err)
 		}
+		slog.Info("write fence passed", "Δ", time.Since(t0).String())
+
+		res, err = rc.Query(ctx, fmt.Sprintf("SELECT _id FROM %s.%s", ws, collection))
+		if err != nil {
+			panic(err)
+		}
+		if len(res.Results) != count {
+			var ids []string
+			for _, r := range res.Results {
+				ids = append(ids, r["_id"].(string))
+			}
+			panic(fmt.Sprintf("expected %d docs, got %d: %v", count, len(res.Results), ids))
+		}
 
 		// delete all docs in the collection
 		if offset, err = deleteDocs(ctx, rc, ws, collection); err != nil {
@@ -93,7 +107,7 @@ func main() {
 			panic(err)
 		}
 
-		slog.Info("last fence passed", "Δ", time.Since(t0).String())
+		slog.Info("delete fence passed", "Δ", time.Since(t0).String())
 	}
 }
 
@@ -116,6 +130,8 @@ func addDocs(ctx context.Context, rc *rockset.RockClient, ws, collection string,
 		if first.GetStatus() != "ADDED" {
 			return "", fmt.Errorf("expected status ADDED, got %s", first.GetStatus())
 		}
+
+		ids = append(ids, first.GetId())
 		offset = res.GetLastOffset()
 	}
 	slog.Info("documents written", "ws", ws, "c", collection, "count", count, "ids", ids)
@@ -165,7 +181,7 @@ func deleteDocs(ctx context.Context, rc *rockset.RockClient, ws, collection stri
 			slog.Error("failed to delete", "ws", ws, "c", collection, "_id", d.GetId(), "staus", d.GetStatus())
 		}
 	}
-	slog.Info("deleted documents", "count", len(docs.GetData()), "offset", docs.GetLastOffset())
+	slog.Info("deleted documents", "count", len(docs.GetData()), "offset", docs.GetLastOffset(), "ids", ids)
 
 	return docs.GetLastOffset(), nil
 }

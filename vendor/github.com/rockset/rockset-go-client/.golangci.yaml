@@ -1,0 +1,47 @@
+run:
+  concurrency: 4
+  timeout: 1m
+  skip-dirs:
+    - openapi
+
+linters-settings:
+  gci:
+    sections:
+      - standard
+      - default
+      - prefix(github.com/rockset/rockset-go-client)
+  goimports:
+    local-prefixes: github.com/rockset/rockset-go-client
+
+linters:
+  enable:
+    - dogsled
+    - errcheck
+    - exportloopref
+    - exhaustive
+    - funlen
+    - gochecknoinits
+    - gci
+    - goconst
+    - gocyclo
+    - gofmt
+    - goimports
+    - gomnd
+    - goprintffuncname
+    - gosec
+    - gosimple
+    - govet
+    - ineffassign
+    - lll
+    - misspell
+    - nakedret
+    - noctx
+    - nolintlint
+    - rowserrcheck
+    - staticcheck
+    - stylecheck
+    - typecheck
+    - unconvert
+    - unparam
+    - unused
+    - whitespace

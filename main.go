@@ -60,7 +60,8 @@ func main() {
 
 	var count = 10
 	var offset string
-	for idx := 0; idx < count; idx++ {
+    var offsets []string
+	for idx := 0; idx < 100000; idx++ {
 		t0 := time.Now()
 		slog.Info("loop", "idx", idx)
 
@@ -74,27 +75,24 @@ func main() {
 		}
 
 		// write docs, get offset
-		if offset, err = addDocs(ctx, rc, ws, collection, idx, count); err != nil {
+		if offsets, err = addDocs(ctx, rc, ws, collection, idx, count); err != nil {
 			panic(err)
 		}
 		l.Info("documents written", "ws", ws, "c", collection, "count", count, "Δ", time.Since(t0).String())
 
 		// fence (loop and get collection commit)
-		if err = waitForOffset(ctx, rc, ws, collection, offset); err != nil {
+		if err = waitForOffsets(ctx, rc, ws, collection, offsets); err != nil {
 			panic(err)
 		}
-		slog.Info("write fence passed", "Δ", time.Since(t0).String())
 
+		// query and see that all docs made it to the collection
+        // TODO(kli): check count star query too
 		res, err = rc.Query(ctx, fmt.Sprintf("SELECT _id FROM %s.%s", ws, collection))
 		if err != nil {
 			panic(err)
 		}
 		if len(res.Results) != count {
-			var ids []string
-			for _, r := range res.Results {
-				ids = append(ids, r["_id"].(string))
-			}
-			panic(fmt.Sprintf("expected %d docs, got %d: %v", count, len(res.Results), ids))
+			panic(fmt.Sprintf("expected %d results, got %d", count, len(res.Results)))
 		}
 
 		// delete all docs in the collection
@@ -109,10 +107,11 @@ func main() {
 
 		slog.Info("delete fence passed", "Δ", time.Since(t0).String())
 	}
+    slog.Info("test passed!!")
 }
 
-func addDocs(ctx context.Context, rc *rockset.RockClient, ws, collection string, idx, count int) (string, error) {
-	var offset string
+func addDocs(ctx context.Context, rc *rockset.RockClient, ws string, collection string, idx int, count int) ([]string, error) {
+	var offsets []string
 	var ids []string
 	for i := 0; i < count; i++ {
 		doc := map[string]interface{}{}
@@ -120,23 +119,40 @@ func addDocs(ctx context.Context, rc *rockset.RockClient, ws, collection string,
 		doc["i"] = i
 		res, err := rc.AddDocumentsWithOffset(ctx, ws, collection, []interface{}{doc})
 		if err != nil {
-			return "", err
+			return []string{""}, err
 		}
 
 		if len(res.Data) != 1 {
-			return "", fmt.Errorf("expected 1 result, got %d", len(res.Data))
+			return []string{""}, fmt.Errorf("expected 1 result, got %d", len(res.Data))
 		}
 		first := res.GetData()[0]
 		if first.GetStatus() != "ADDED" {
-			return "", fmt.Errorf("expected status ADDED, got %s", first.GetStatus())
+			return []string{""}, fmt.Errorf("expected status ADDED, got %s", first.GetStatus())
 		}
-
 		ids = append(ids, first.GetId())
-		offset = res.GetLastOffset()
+		offsets = append(offsets, res.GetLastOffset())
 	}
 	slog.Info("documents written", "ws", ws, "c", collection, "count", count, "ids", ids)
 
-	return offset, nil
+	return offsets, nil
+}
+
+func waitForOffsets(ctx context.Context, rc *rockset.RockClient, ws string, collection string, offsets []string) error {
+	for {
+		qr, err := rc.GetCollectionCommit(ctx, ws, collection, offsets)
+		if err != nil {
+			return err
+		}
+
+		if qr.GetPassed() {
+			slog.Info("fence passed", "ws", ws, "c", collection, "offsets", offsets)
+			break
+		}
+
+		time.Sleep(time.Second)
+	}
+
+	return nil
 }
 
 func waitForOffset(ctx context.Context, rc *rockset.RockClient, ws, collection, offset string) error {

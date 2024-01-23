@@ -2,9 +2,7 @@ module github.com/rockset/windward
 
 go 1.21.5
 
-//replace (
-//	github.com/rockset/rockset-go-client v0.22.6 => ../rockset-go-client
-//)
+replace github.com/rockset/rockset-go-client v0.22.6 => ../rockset-go-client
 
 require github.com/rockset/rockset-go-client v0.22.6
 

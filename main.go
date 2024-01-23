@@ -59,8 +59,8 @@ func main() {
 	}
 
 	var count = 10
-	var offset string
     var offsets []string
+    var iisOffset string
 	for idx := 0; idx < 100000; idx++ {
 		t0 := time.Now()
 		slog.Info("loop", "idx", idx)
@@ -95,13 +95,36 @@ func main() {
 			panic(fmt.Sprintf("expected %d results, got %d", count, len(res.Results)))
 		}
 
-		// delete all docs in the collection
-		if offset, err = deleteDocs(ctx, rc, ws, collection); err != nil {
+		// delete all docs in the collection via IIS with _op = 'DELETE'
+ 		res, err = rc.Query(ctx, fmt.Sprintf("INSERT INTO %s.%s (SELECT _id, 'DELETE' AS _op FROM %s.%s)", ws, collection, ws, collection))
+		if err != nil {
 			panic(err)
 		}
+		if len(res.Results) != 1 {
+			panic(fmt.Sprintf("expected 1 docs, got %d", len(res.Results)))
+		}
+        //  check we got one doc from IIS with correct num elements deleted
+        if res.Results[0]["num_docs_inserted"].(float64) != float64(count) {
+			panic(fmt.Sprintf("expected %d docs deleted by IIS, got %f", count, res.Results[0]["num_docs_inserted"].(float64)))
+        }
+
+        // retrieve IIS query to get last offset
+        for {
+            res1, err := rc.GetQueryInfo(ctx, *res.QueryId);
+            if err != nil {
+    			panic(err)
+    		}
+    		if (res1.LastOffset == nil || *res1.LastOffset == "") {
+    			fmt.Sprintf("expected non empty last offset, will retry...")
+    		} else {
+                iisOffset = *res1.LastOffset
+                break
+            }
+        }
+        slog.Info("got IIS query last offset", "offset", iisOffset)
 
 		// fence (loop and get collection commit)
-		if err = waitForOffset(ctx, rc, ws, collection, offset); err != nil {
+		if err = waitForOffset(ctx, rc, ws, collection, iisOffset); err != nil {
 			panic(err)
 		}
 

@@ -60,7 +60,7 @@ func main() {
 
 	var count = 10
 	var offset string
-    var offsets []string
+	var offsets []string
 	for idx := 0; idx < 100000; idx++ {
 		t0 := time.Now()
 		slog.Info("loop", "idx", idx)
@@ -74,7 +74,7 @@ func main() {
 			panic(fmt.Sprintf("expected 0 docs, got %d", len(res.Results)))
 		}
 
-		// write docs, get offset
+		// write docs, get offsets from all individual writes
 		if offsets, err = addDocs(ctx, rc, ws, collection, idx, count); err != nil {
 			panic(err)
 		}
@@ -100,13 +100,13 @@ func main() {
 		}
 
 		// fence (loop and get collection commit)
-		if err = waitForOffset(ctx, rc, ws, collection, offset); err != nil {
+		if err = waitForOffsets(ctx, rc, ws, collection, []string{offset}); err != nil {
 			panic(err)
 		}
 
 		slog.Info("delete fence passed", "Δ", time.Since(t0).String())
 	}
-    slog.Info("test passed!!")
+	slog.Info("test passed!!")
 }
 
 func addDocs(ctx context.Context, rc *rockset.RockClient, ws string, collection string, idx int, count int) ([]string, error) {
@@ -145,24 +145,6 @@ func waitForOffsets(ctx context.Context, rc *rockset.RockClient, ws string, coll
 
 		if qr.GetPassed() {
 			slog.Info("fence passed", "ws", ws, "c", collection, "offsets", offsets)
-			break
-		}
-
-		time.Sleep(time.Second)
-	}
-
-	return nil
-}
-
-func waitForOffset(ctx context.Context, rc *rockset.RockClient, ws, collection, offset string) error {
-	for {
-		qr, err := rc.GetCollectionCommit(ctx, ws, collection, []string{offset})
-		if err != nil {
-			return err
-		}
-
-		if qr.GetPassed() {
-			slog.Info("fence passed", "ws", ws, "c", collection, "offset", offset)
 			break
 		}
 
